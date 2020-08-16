@@ -1,0 +1,24 @@
+{
+  "name": "fibjs-mail",
+  "version": "1.0.3",
+  "description": "",
+  "main": "./lib/index.js",
+  "types": "./@types/index.d.ts",
+  "private": false,
+  "author": "",
+  "homepage": "https://github.com/lhkzh/fibjs-mail",
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "@fibjs/types": "^0.31.0"
+  },
+  "peerDependencies": {},
+  "files": [
+    "package.json",
+    "README.md",
+    "@types",
+    "src",
+    "lib"
+  ],
+  "keywords": ["fibjs","mail","smtp","pop3"]
+}
