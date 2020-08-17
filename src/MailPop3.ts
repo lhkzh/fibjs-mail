@@ -117,6 +117,9 @@ export class MailPop3 {
     public retr(no:number){
         let rsp = this.sendRcv1(MailPop3Cmd.RETR, no);
         if(rsp.startsWith(RSP_OK)){
+            if(rsp==RSP_OK){
+                return this.readMoreLine().join(this.stream.EOL);
+            }
             let n = Number(rsp.split(' ')[1]);
             return this.readSize(n+5).substr(0,n);
         }
@@ -184,21 +187,25 @@ export class MailPop3 {
         let rsp = this.sendRcv1(cmd, ...args);
         if(rsp.startsWith(RSP_OK)){
             if(cmd==MailPop3Cmd.LIST || cmd==MailPop3Cmd.UIDL || cmd==MailPop3Cmd.TOP || cmd==MailPop3Cmd.RETR){
-                let arr=[rsp];
-                do{
-                    let tmp = this.stream.readLine();
-                    if(tmp==null){
-                        this.drop(null);
-                        throw new Error("io_error");
-                    }
-                    if(tmp=="."){
-                        return arr;
-                    }
-                    arr.push(tmp);
-                }while(true);
+                return this.readMoreLine([rsp]);
             }
         }
         return [rsp];
+    }
+    private readMoreLine(arr?:string[]){
+        arr = arr?arr:[];
+        do{
+            let tmp = this.stream.readLine();
+            if(tmp==null){
+                this.drop(null);
+                throw new Error("io_error");
+            }
+            if(tmp=="."){
+                return arr;
+            }
+            arr.push(tmp);
+        }while(true);
+        return arr;
     }
     private drop(e:Error, sock?:Class_Socket){
         if(this.sock){
