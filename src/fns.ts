@@ -54,12 +54,12 @@ export function splitHeader(headerBlock: string) {
     var headers: { [index: string]: any } = {};
     for (var i = 0; i < arr.length; i++) {
         var s = arr[i];
-        var j = s.indexOf(': ');
+        var j = s.indexOf(':');
         var h = s.substr(0, j);
-        var e = s.substr(j + 2);
+        var e = parseBase64Charset(s.substr(j + 2).trim());
         while ((i + 1) < arr.length && arr[i + 1].charAt(0).trim().length == 0) {
             i++;
-            e += arr[i].trim();
+            e += parseBase64Charset(arr[i].trim());
         }
         headers[h] = e;
     }
