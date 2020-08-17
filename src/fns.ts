@@ -112,43 +112,89 @@ function parseBody(bodyBlock: string, headers: any) {
 function parseTextBody(bodyBlock) {
     return bodyBlock.trim();
 }
-
+function trim_split_block(bs) {
+    let arr = bs.split(/\r\n|\n/g).filter(e=>e.length>0 && e.startsWith('--')==false);
+    let ret = [];
+    for(var i=0;i<arr.length;i++){
+        let s = arr[i];
+        while((i+1)<arr.length && arr[i+1].charAt(0).trim().length==0){
+            s+=arr[i+1].trim();
+            i++;
+        }
+        ret.push(s);
+    }
+    return ret;
+}
+function splitMultiPart(s:string, boundaries:string) {
+    let a = s.split(boundaries), end=a[a.length-1];
+    if(end.length==0 || end=='--'){
+        a.pop();
+    }
+    let child_boundaries = null;
+    a.some((e,i)=>{
+        if(i<2 && e.includes('boundary=')){
+            let tmp = e.split(/\r\n|\n/), tmp_at:number=-1;
+            for(var j=0;j<tmp.length;j++){
+                if(tmp[j].includes('boundary=')){
+                    child_boundaries = tmp[j].split('boundary=')[1].split(';')[0].replace(/"/g, '').trim();
+                    tmp_at = j;
+                    break;
+                }
+            }
+            if(tmp_at>0){
+                a[i] = tmp.slice(tmp_at+1).join('\n').replace(child_boundaries+'--','');
+                a[i] = replaceAll(a[i], child_boundaries, boundaries);
+            }
+            return true;
+        }
+    });
+    if (child_boundaries) {
+        return splitMultiPart(a.join(boundaries), boundaries);
+    }
+    return a;
+}
+function replaceAll(src, s1, s2) {
+    return src.replace(new RegExp(s1, "gm"), s2);
+}
 function parseMultiPart(bodyBlock: string, boundaries: string) {
-    /* Get MIME container starting points */
-    var indices = getIndicesOf(boundaries, bodyBlock);
-    var frames = [];
-    /* Grab each container from the body block */
-    for (let i = 0; i < indices.length; i++) {
-        let theBlock = bodyBlock.substring(indices[0 + i] + boundaries.length, indices[1 + i]).trim();
-        if (theBlock.length == 0) continue;
+    let frames = [];
+    splitMultiPart(bodyBlock, boundaries).forEach(theBlock=>{
+        if (theBlock.length == 0) return;
         let contentType: string;
         let contentEncoding: string;
         let content: any;
         let filename: string;
         let charset = "utf-8";
-        theBlock.split("\r\n").forEach(e => {
-            if (e.length == 0)
-                return;
-            if (e.includes('charset=')) {
-                charset = e.split('charset=')[1].trim();
-                if (charset.charAt(0) == '"' || charset.charAt(0) == "'") {
-                    charset = charset.substr(1, charset.length - 2);
-                }
-                if (!e.startsWith("Content-Type: ")) {
-                    return;
-                }
-            }
+        let block_lines = trim_split_block(theBlock);
+        for(let j=0;j<block_lines.length;j++){
+            let e = block_lines[j];
             if (e.startsWith("Content-Type: ")) {
-                contentType = e.substr("Content-Type: ".length);
-            } else if (e.startsWith("Content-Transfer-Encoding: ")) {
-                contentEncoding = e.substr("Content-Transfer-Encoding: ".length);
-            } else if (e.startsWith('Content-Disposition:')) {
-                if (e.startsWith('filename=')) {
-                    filename = e.split('filename=')[1].trim();
-                    if (filename.charAt(0) == '"' || filename.charAt(0) == "'") {
-                        filename = filename.substr(1, filename.length - 2);
-                    }
+                let tmp = e.substr(13).split(';').map(e=>e.trim());
+                contentType = tmp.shift();
+                if(tmp.length>0){
+                    tmp.forEach(e2=>{
+                        let t2=e2.split('=').map(e=>e.trim());
+                        if(t2[0]=='charset'){
+                            charset = t2[1];
+                            if(charset.charAt(0)=='"'){
+                                charset = charset.substr(1,charset.length-2);
+                            }
+                        }
+                    })
                 }
+            } else if (e.startsWith("Content-Transfer-Encoding:")) {
+                contentEncoding = e.substr(26).trim();
+            } else if (e.startsWith('Content-Disposition:')) {
+                let tmp = e.substr(13).split(';').map(e=>e.trim());
+                tmp.forEach(e2=>{
+                    let t2=e2.split('=').map(e=>e.trim());
+                    if(t2[0]=='filename'){
+                        filename=t2[1].trim();
+                        if(filename.charAt(0)=='"'){
+                            filename = filename.substr(1,filename.length-2);
+                        }
+                    }
+                });
             } else if (!e.includes(': ')) {
                 if (!content) {
                     content = e.trim();
@@ -156,9 +202,10 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
                     content += e.trim();
                 }
             }
-        });
-        if (!content || (!contentEncoding && !contentType && !filename))
-            continue;
+        }
+        // console.warn(contentEncoding,contentType,charset,filename,content)
+        if (!content || (!contentEncoding && !contentType))
+            return;
         if (contentEncoding == "base64") {
             content = Buffer.from(content, contentEncoding);
             if (filename) {
@@ -190,7 +237,7 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
             content = {contentType: contentType, data: content.toString()};
         }
         frames.push(content);
-    }
+    });
     if (frames.length == 1) {
         if (frames[0].contentType.startsWith("text/")) {
             return frames[0].data;
@@ -213,24 +260,6 @@ function decodeQuotedPrintable(text) {
         .replace(RFC2045Decode2IN, RFC2045Decode2OUT);
 }
 
-function getIndicesOf(searchStr, str) {
-    var startIndex = 0,
-        searchStrLen = searchStr.length;
-    var index, indices = [];
-
-    while ((index = str.indexOf(searchStr, startIndex)) > -1) {
-        indices.push(index);
-        startIndex = index + searchStrLen;
-    }
-    return indices;
-}
-
 const regexes = {
-    // newLine: /\r\n|\r|\n/,
     doubleNewLine: /\r?\n\r?\n/,
-    // headerAttribute: /:(.+)?/,
-    // fold: /\r\n|\r|\n(?:[ \t]+)/g,
-    // email: /(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))/g,
-    // ipAddr: /\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/,
-    // header: /^(.+): ((.|\r\n\s)+)\r\n/mg,
 }
