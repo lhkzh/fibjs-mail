@@ -112,29 +112,28 @@ export class MailData {
                 lines.push(`${k}: ${v}`);
             }
         }
-        let boundary = this.genNewBoundary(timeNow);
+        let boundary = genNewBoundary();
         let boundaryMixed = '--'+boundary;
         let attachments = this.encodeAttachments(boundaryMixed);
-        lines.push('Content-Type: multipart/mixed; boundary="' + boundary+'"', "")
+        lines.push('Content-Type: multipart/alternative; boundary="' + boundary+'"', "","This is a multi-part message in MIME format.","")
         if (this.message) {
-            var msg = this.message;
+            var msg = this.message.replace(/<\/?.+?>/g,"");
             var ct_line = this.guessContentTypeLine(msg);
             lines.push(boundaryMixed,
                 ct_line,
-                "Content-Transfer-Encoding: base64",
-                encodeBase64(msg));
-            if(ct_line.indexOf('html')<0){
-                var html_msg = msg.replace(/\r\n|\n/g,'<br>');
-                if(html_msg!=msg){
-                    ct_line = this.guessContentTypeLine(html_msg);
-                    lines.push(boundaryMixed,
-                        ct_line,
-                        "Content-Transfer-Encoding: base64",
-                        encodeBase64(html_msg));
-                }
+                "Content-Transfer-Encoding: base64",'',
+                encodeBase64(msg),'');
+            let html_msg = this.message.replace(/\r\n|\n/g,'<br/>');
+            if(html_msg!=msg){
+                ct_line = this.guessContentTypeLine(html_msg);
+                lines.push('',boundaryMixed,
+                    ct_line,
+                    "Content-Transfer-Encoding: base64",'',
+                    encodeBase64(html_msg),'');
             }
         }
         attachments.forEach(e => lines.push(e));
+        lines.push('',boundaryMixed)
         return lines.join(EOL) + EOL
     }
 
@@ -173,19 +172,14 @@ export class MailData {
         }
         return lines;
     }
-
-    private genNewBoundary(timestamp) {
-        let n = this["_boundary_"];
-        if (n === undefined) n = 0;
-        n++;
-        this["_boundary_"] = n;
-        return `${n}${Math.random().toString(36).slice(2)}${timestamp}`;
-    }
 }
 
 const EOL = '\r\n';
 const ANAME = /^\w+$/;
-
+function genNewBoundary() {
+    let f = ()=>Math.random().toString(36).substr(2,8).toUpperCase();
+    return '----=_NextPart_'+[f(),f(),Date.now().toString(32).toUpperCase().substr(1,8)].join('_')
+}
 function encodeMailboxs(mailboxes) {
     if (Array.isArray(mailboxes) == false) {
         mailboxes = [mailboxes];
@@ -196,7 +190,7 @@ function encodeMailboxs(mailboxes) {
             memo += obj.addr;
         }else{
             if(!ANAME.test(name)){
-                name = `=?UTF-8?B?${encodeBase64(name)}`;
+                name = `=?UTF-8?B?${encodeBase64(name)}?=`;
             }
             memo += `${name} <${obj.addr}>`;
         }
@@ -213,11 +207,4 @@ function createMsgID(timestamp, senderHost) {
 function encodeBase64(s: string): string {
     // return require("base64").encode(s);
     return Buffer.from(s).toString('base64');
-}
-function generateBoundary() {
-    var boundary = '------------------------';
-    for (var i = 0; i < 16; i++) {
-        boundary += Math.floor(Math.random() * 10).toString(16);
-    }
-    return boundary;
 }
