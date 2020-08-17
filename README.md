@@ -34,7 +34,7 @@ sender.send(mailData)
 **use pop3**
 <pre>
 <code>
-const MailData = require("fibjs-mail").MailData;  
+const MailPop3 = require("fibjs-mail").MailPop3;  
 const parseMailData = require("fibjs-mail").parseMailData;  
 var reader=new MailPop3("tcp://pop.qq.com:110",{user:"yourqq@qq.com",pass:"authcode"});  
 console.log(reader.list())   
