@@ -158,7 +158,7 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
             }
         });
         if (!content || (!contentEncoding && !contentType && !filename))
-            return;
+            continue;
         if (contentEncoding == "base64") {
             content = Buffer.from(content, contentEncoding);
             if (filename) {
