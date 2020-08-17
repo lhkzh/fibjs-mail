@@ -9,9 +9,9 @@ s.command('RCPT TO:','<to@qq.com>');
 s.data('hi, i am simple data. @by fibjs');  
 s.quit();  
 
+**use-mime**  
 <pre>
 <code>
-const MailData = require("fibjs-mail").MailData;
 const MailSender = require("fibjs-mail").MailSender;
 const MailPop3 = require("fibjs-mail").MailPop3;  
 var mailData = new MailData();
@@ -28,7 +28,16 @@ mailData.attachments = [{
 var sender=new MailSender('yourqq@qq.com', 'yourqq_account_auth_smtp_key');
 sender.send(mailData)  
 
+</code>
+</pre>
+
+**use pop3**
+<pre>
+<code>
+const MailData = require("fibjs-mail").MailData;  
+const parseMailData = require("fibjs-mail").parseMailData;  
 var reader=new MailPop3("tcp://pop.qq.com:110",{user:"yourqq@qq.com",pass:"authcode"});  
-console.log(reader.list())  
+console.log(reader.list())   
+console.log(parseMailData(reader.retr(1)))  
 </code>
 </pre>
