@@ -28,7 +28,17 @@ export function parseMailData(s) {
     var d = splitDoc(s);
     return {headers: d.headers, body: parseBody(d.body, d.headers)};
 }
-
+export function parseMailHeaders(s) {
+    var bodyStart = s.search(regexes.doubleNewLine);
+    if (bodyStart < 0) {
+        let end = s.lastIndexOf("\r\n");
+        if (end > 0) {
+            bodyStart = end;
+        }
+    }
+    let header = s.substring(0, bodyStart>0?bodyStart:s.length);
+    return splitHeader(header);
+}
 export function splitDoc(s: string) {
     var bodyStart = s.search(regexes.doubleNewLine);
     if (bodyStart < 0) {
@@ -37,8 +47,8 @@ export function splitDoc(s: string) {
             bodyStart = end;
         }
     }
-    let header = s.substring(0, bodyStart);
-    let body = s.substring(bodyStart).trim();
+    let header = s.substring(0, bodyStart>0?bodyStart:s.length);
+    let body = bodyStart>0?s.substring(bodyStart).trim():"";
     return {
         headers: splitHeader(header),
         body: body
@@ -113,43 +123,52 @@ function parseTextBody(bodyBlock) {
     return bodyBlock.trim();
 }
 function trim_split_block(bs) {
-    let arr = bs.split(/\r\n|\n/g).filter(e=>e.length>0 && e.startsWith('--')==false);
-    let ret = [];
-    for(var i=0;i<arr.length;i++){
-        let s = arr[i];
-        while((i+1)<arr.length && arr[i+1].charAt(0).trim().length==0){
-            s+=arr[i+1].trim();
-            i++;
+    var lines = bs.split(regexes.allLine);
+    var hend=false;
+    var ret = [];
+    for(var i=0;i<lines.length;i++){
+        let s = lines[i];
+        if(s.startsWith('Content-')){
+            while ((i + 1) < lines.length && lines[i + 1].charAt(0).trim().length == 0 && lines[i + 1].includes('=')) {
+                s += lines[i + 1];
+                i++;
+            }
+            ret.push(s);
+        }else{
+            ret.push(lines.slice(i).join('\n'));
+            break;
         }
-        ret.push(s);
     }
     return ret;
 }
-function splitMultiPart(s:string, boundaries:string) {
-    let a = s.split(boundaries), end=a[a.length-1];
-    if(end.length==0 || end=='--'){
+function splitMultiPart(s:string, boundaries:string, stepFirst=true) {
+    let a = s.split(boundaries), first = a[0], end = a[a.length - 1];
+    if (stepFirst && a.length > 0 && first.includes('Content-') == false) {
+        a.shift();
+    }
+    if (a.length > 0 && a[a.length-1].trim() == '--') {
         a.pop();
     }
     let child_boundaries = null;
-    a.some((e,i)=>{
-        if(i<2 && e.includes('boundary=')){
-            let tmp = e.split(/\r\n|\n/), tmp_at:number=-1;
-            for(var j=0;j<tmp.length;j++){
-                if(tmp[j].includes('boundary=')){
+    a.some((e, i) => {
+        if (i < 2 && e.includes('boundary=')) {
+            let tmp = e.split(/\r\n|\n/), tmp_at = -1;
+            for (var j = 0; j < tmp.length; j++) {
+                if (tmp[j].includes('boundary=')) {
                     child_boundaries = tmp[j].split('boundary=')[1].split(';')[0].replace(/"/g, '').trim();
                     tmp_at = j;
                     break;
                 }
             }
-            if(tmp_at>0){
-                a[i] = tmp.slice(tmp_at+1).join('\n').replace(child_boundaries+'--','');
-                a[i] = replaceAll(a[i], child_boundaries, boundaries);
+            if (tmp_at > 0 && child_boundaries != boundaries) {
+                a[i] = tmp.slice(tmp_at + 1).join('\r\n').replace('--'+child_boundaries + '--', '');
+                a[i] = replaceAll(a[i], child_boundaries, boundaries.substr(2));
             }
             return true;
         }
     });
-    if (child_boundaries) {
-        return splitMultiPart(a.join(boundaries), boundaries);
+    if (child_boundaries && child_boundaries != boundaries) {
+        return splitMultiPart(a.join(boundaries), boundaries, false);
     }
     return a;
 }
@@ -159,13 +178,14 @@ function replaceAll(src, s1, s2) {
 function parseMultiPart(bodyBlock: string, boundaries: string) {
     let frames = [];
     splitMultiPart(bodyBlock, boundaries).forEach(theBlock=>{
+        theBlock=theBlock.trim();
         if (theBlock.length == 0) return;
         let contentType: string;
         let contentEncoding: string;
-        let content: any;
         let filename: string;
         let charset = "utf-8";
         let block_lines = trim_split_block(theBlock);
+        let content = block_lines.pop();
         for(let j=0;j<block_lines.length;j++){
             let e = block_lines[j];
             if (e.startsWith("Content-Type: ")) {
@@ -195,12 +215,6 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
                         }
                     }
                 });
-            } else if (!e.includes(': ')) {
-                if (!content) {
-                    content = e.trim();
-                } else {
-                    content += e.trim();
-                }
             }
         }
         // console.warn(contentEncoding,contentType,charset,filename,content)
@@ -212,29 +226,13 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
                 content = {contentType: contentType, filename: filename, data: content};
             } else {
                 // if(contentType.startsWith("text/"))
-                content = {contentType: contentType, data: content.toString(charset)};
+                content = {contentType: contentType, data: content.toString(charset.toLowerCase())};
             }
         } else if (contentEncoding == "quoted-printable") {
-            content = content.toString()
-                // https://tools.ietf.org/html/rfc2045#section-6.7, rule 3:
-                // “Therefore, when decoding a `Quoted-Printable` body, any trailing white
-                // space on a line must be deleted, as it will necessarily have been added
-                // by intermediate transport agents.”
-                .replace(/[\t\x20]$/gm, '')
-                // Remove hard line breaks preceded by `=`. Proper `Quoted-Printable`-
-                // encoded data only contains CRLF line  endings, but for compatibility
-                // reasons we support separate CR and LF too.
-                .replace(/=(?:\r\n?|\n|$)/g, '')
-                // Decode escape sequences of the form `=XX` where `XX` is any
-                // combination of two hexidecimal digits. For optimal compatibility,
-                // lowercase hexadecimal digits are supported as well. See
-                // https://tools.ietf.org/html/rfc2045#section-6.7, note 1.
-                .replace(/=([a-fA-F0-9]{2})/g, function ($0, $1) {
-                    return String.fromCharCode(parseInt($1, 16));
-                });
-            content = {contentType: contentType, data: content.toString()};
+            content = decodeQuotedPrintable(content, charset.toLowerCase());
+            content = {contentType: contentType, data: content};
         } else {
-            content = {contentType: contentType, data: content.toString()};
+            content = {contentType: contentType, data: content};
         }
         frames.push(content);
     });
@@ -247,19 +245,27 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
 }
 
 /* From PHP.js - http://phpjs.org/functions/quoted_printable_decode/ */
-function decodeQuotedPrintable(text) {
-    var RFC2045Decode1 = /=\r\n/gm,
-        // Decodes all equal signs followed by two hex digits
-        RFC2045Decode2IN = /=([0-9A-F]{2})/gim,
-        // the RFC states against decoding lower case encodings, but following apparent PHP behavior
-        // RFC2045Decode2IN = /=([0-9A-F]{2})/gm,
-        RFC2045Decode2OUT = function (sMatch, sHex) {
-            return String.fromCharCode(parseInt(sHex, 16));
-        };
-    return text.replace(RFC2045Decode1, '')
-        .replace(RFC2045Decode2IN, RFC2045Decode2OUT);
+function decodeQuotedPrintable(text, charset:string="utf-8") {
+    // text = text
+    //     .replace(/[\t ]+$/gm, '') // remove invalid whitespace from the end of lines
+    //     .replace(/=(?:\r?\n|$)/g, '');
+    text = text.replace(regexes.allLine,'');
+    const encodedBytesCount = (text.match(/=[\da-fA-F]{2}/g) || []).length
+    let buffer = new Uint8Array(text.length - encodedBytesCount * 2)
+    for (var i = 0, len = text.length, bufferPos = 0; i < len; i++) {
+        let hex = text.substr(i + 1, 2)
+        const chr = text.charAt(i)
+        if (chr === '=' && hex && /[\da-fA-F]{2}/.test(hex)) {
+            buffer[bufferPos++] = parseInt(hex, 16)
+            i += 2
+        } else {
+            buffer[bufferPos++] = chr.charCodeAt(0)
+        }
+    }
+    return Buffer.from(buffer).toString(charset);
 }
 
 const regexes = {
     doubleNewLine: /\r?\n\r?\n/,
+    allLine:/\r\n|\n|\r/g,
 }

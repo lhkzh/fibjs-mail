@@ -13,7 +13,7 @@ export class MailPop3 {
      *
      * @param server 服務器url  tcp://pop.qq.com:110 ssl://pop.qq.com:995
      */
-    constructor(private server:string, private auth?:{user:string, pass:string, normal?:boolean}) {
+    constructor(private server:string, private auth?:{user:string, pass:string, normal?:boolean}, private charset:string=null) {
         // if(!byServer){
         //     this.byServer = 'ssl://pop.'+senderAddress.split('@')[1]+':995';
         // }
@@ -35,6 +35,7 @@ export class MailPop3 {
         let sock = <Class_Socket>net.connect(this.server);
         this.stream = new io.BufferedStream(sock);
         this.stream.EOL = "\r\n";
+        this.stream.charset = this.charset||'utf-8';
         try{
             let str = this.stream.readLine();
             if(str==null || !str.startsWith(RSP_OK)){
@@ -108,9 +109,11 @@ export class MailPop3 {
         return rets;
     }
 
-    public top(no:number, line?:number){
+    public top(no:number, line:number=1){
         let rsp = line>0 ? this.sendCommand(MailPop3Cmd.TOP, no, line):this.sendCommand(MailPop3Cmd.TOP, no);
-        rsp.shift();
+        if(rsp[0].startsWith(RSP_OK)){
+            rsp.shift();
+        }
         return rsp.join(this.stream.EOL);
     }
 
@@ -121,7 +124,8 @@ export class MailPop3 {
                 return this.readMoreLine().join(this.stream.EOL);
             }
             let n = Number(rsp.split(' ')[1]);
-            return this.readSize(n+5).substr(0,n);
+            // return this.readSize(n+5).substr(0,n);
+            return decodeStr(this.readSize(n+5).slice(0,n), this.charset||'utf-8');
         }
         return "";
     }
@@ -158,7 +162,7 @@ export class MailPop3 {
         this.stream.writeLine([cmd,...args].join(' '));
     }
     private readSize(n:number){
-        let r = this.stream.readText(n);
+        let r = this.stream.read(n);//this.stream.readText(n);
         if(r==null){
             this.drop(null);
             throw new Error("io_error");
@@ -239,4 +243,18 @@ export enum MailPop3Cmd {
     TOP= 'TOP',
     NOOP= 'NOOP',
     QUIT= 'QUIT'
+}
+const lib_charsets = ['utf-8','gb2312','iso-8859-1','gb18030','utf-16'];
+function decodeStr(buffer:Class_Buffer, otherCharset){
+    for(var i=0;i<lib_charsets.length;i++){
+        try{
+            let c = lib_charsets[i];
+            let s = buffer.toString(c);
+            if(Buffer.from(s,c)==buffer.length){
+                return s;
+            }
+        }catch (e) {
+        }
+    }
+    return buffer.toString(otherCharset);
 }
