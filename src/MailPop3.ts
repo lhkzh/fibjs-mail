@@ -250,7 +250,7 @@ function decodeStr(buffer:Class_Buffer, otherCharset){
         try{
             let c = lib_charsets[i];
             let s = buffer.toString(c);
-            if(Buffer.from(s,c)==buffer.length){
+            if(Buffer.from(s,c).length==buffer.length){
                 return s;
             }
         }catch (e) {

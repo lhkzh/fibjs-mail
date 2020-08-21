@@ -124,7 +124,6 @@ function parseTextBody(bodyBlock) {
 }
 function trim_split_block(bs) {
     var lines = bs.split(regexes.allLine);
-    var hend=false;
     var ret = [];
     for(var i=0;i<lines.length;i++){
         let s = lines[i];
@@ -267,7 +266,7 @@ function decodeQuotedPrintable(text, charset:string="utf-8") {
             arr.push(c);
         }
     }
-    return Buffer.from(new Uint8Array(arr)).toString(charset);
+    return new Buffer(arr).toString(charset);
 }
 
 const regexes = {
