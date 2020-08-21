@@ -141,43 +141,49 @@ function trim_split_block(bs) {
     }
     return ret;
 }
-function splitMultiPart(s:string, boundaries:string, stepFirst=true) {
-    let a = s.split(boundaries), first = a[0], end = a[a.length - 1];
+//根据boundary分割
+function split_boundary(s:string, boundaries:string, stepFirst=true) {
+    let a = clean_sub_boundary(s, boundaries).split(boundaries), first = a[0], end = a[a.length - 1];
     if (stepFirst && a.length > 0 && first.includes('Content-') == false) {
         a.shift();
     }
     if (a.length > 0 && a[a.length-1].trim() == '--') {
         a.pop();
     }
-    let child_boundaries = null;
-    a.some((e, i) => {
-        if (i < 2 && e.includes('boundary=')) {
-            let tmp = e.split(/\r\n|\n/), tmp_at = -1;
-            for (var j = 0; j < tmp.length; j++) {
-                if (tmp[j].includes('boundary=')) {
-                    child_boundaries = tmp[j].split('boundary=')[1].split(';')[0].replace(/"/g, '').trim();
-                    tmp_at = j;
-                    break;
+    return a;
+}
+//替换子项中产生的boundary
+function clean_sub_boundary(body:string,root_boundary:string) {
+    do{
+        // console.warn(body.substr(0,200))
+        let idx = body.indexOf('boundary="');
+        if(idx>0){
+            let idx_mh = body.indexOf(': ',idx-42);
+            if(idx_mh>0){
+                let idx_ct = body.indexOf('Content-Type',idx_mh-12);
+                if(idx_ct>0){
+                    let idx_end = body.indexOf('"',idx+10);
+                    if(idx_end>0 && idx_end-idx_mh<128){
+                        let ctb = body.substring(idx_ct,idx_end+1);
+                        let sub_boundary = body.substring(idx+10,idx_end);
+                        body = body.replace(ctb,'');
+                        body = replaceAll(body, '\n--'+sub_boundary+'--','')
+                        body = replaceAll(body, '\n--'+sub_boundary,'\n'+root_boundary);
+                        continue;
+                    }
                 }
             }
-            if (tmp_at > 0 && child_boundaries != boundaries) {
-                a[i] = tmp.slice(tmp_at + 1).join('\r\n').replace('--'+child_boundaries + '--', '');
-                a[i] = replaceAll(a[i], child_boundaries, boundaries.substr(2));
-            }
-            return true;
         }
-    });
-    if (child_boundaries && child_boundaries != boundaries) {
-        return splitMultiPart(a.join(boundaries), boundaries, false);
-    }
-    return a;
+        break;
+    }while(true)
+    return body;
 }
 function replaceAll(src, s1, s2) {
     return src.replace(new RegExp(s1, "gm"), s2);
 }
 function parseMultiPart(bodyBlock: string, boundaries: string) {
     let frames = [];
-    splitMultiPart(bodyBlock, boundaries).forEach(theBlock=>{
+    split_boundary(bodyBlock, boundaries).forEach(theBlock=>{
         theBlock=theBlock.trim();
         if (theBlock.length == 0) return;
         let contentType: string;
@@ -186,6 +192,9 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
         let charset = "utf-8";
         let block_lines = trim_split_block(theBlock);
         let content = block_lines.pop();
+        if(content.length<128 && content.startsWith('Content-') && content.indexOf(': ')>0){
+            return;
+        }
         for(let j=0;j<block_lines.length;j++){
             let e = block_lines[j];
             if (e.startsWith("Content-Type: ")) {
@@ -229,7 +238,7 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
                 content = {contentType: contentType, data: content.toString(charset.toLowerCase())};
             }
         } else if (contentEncoding == "quoted-printable") {
-            content = decodeQuotedPrintable(content, charset.toLowerCase());
+            content = decodeQuotedPrintable(content.trim(), charset.toLowerCase());
             content = {contentType: contentType, data: content};
         } else {
             content = {contentType: contentType, data: content};

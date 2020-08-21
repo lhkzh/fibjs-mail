@@ -38,6 +38,11 @@ const MailPop3 = require("fibjs-mail").MailPop3;
 const parseMailData = require("fibjs-mail").parseMailData;  
 var reader=new MailPop3("tcp://pop.qq.com:110",{user:"yourqq@qq.com",pass:"authcode"});  
 console.log(reader.list())   
-console.log(parseMailData(reader.retr(1)))  
+let mime_str=reader.retr(1);
+//简单解析邮件内容(不保证完全解析正确
+console.log(parseMailData(mime_str))  
 </code>
 </pre>
+
+**bug report**  
+https://github.com/lhkzh/fibjs-mail/issues
