@@ -60,13 +60,13 @@ export function splitHeader(headerBlock: string) {
     if (headerBlock === '') {
         return result;
     }
-    var arr = headerBlock.split("\r\n");
+    var arr = headerBlock.split(regexes.allLine);
     var headers: { [index: string]: any } = {};
     for (var i = 0; i < arr.length; i++) {
         var s = arr[i];
         var j = s.indexOf(':');
         var h = s.substr(0, j);
-        var e = parseBase64Charset(s.substr(j + 2).trim());
+        var e = parseBase64Charset(s.substr(j + 1).trim());
         while ((i + 1) < arr.length && arr[i + 1].charAt(0).trim().length == 0) {
             i++;
             e += parseBase64Charset(arr[i].trim());
@@ -88,7 +88,7 @@ function parseBody(bodyBlock: string, headers: any) {
         return '';
     }
     var encoding = headers['Content-Transfer-Encoding'] || '';
-    if (encoding === 'base64') {
+    if (encoding === 'base64' && /:|-|_/.test(bodyBlock)==false) {
         bodyBlock = Buffer.from(bodyBlock, encoding).toString();
     }
     var content_type = headers['Content-Type'] || ""
@@ -191,12 +191,12 @@ function parseMultiPart(bodyBlock: string, boundaries: string) {
         let charset = "utf-8";
         let block_lines = trim_split_block(theBlock);
         let content = block_lines.pop();
-        if(content.length<128 && content.startsWith('Content-') && content.indexOf(': ')>0){
+        if(content.length<128 && content.startsWith('Content-') && content.indexOf(':')>0){
             return;
         }
         for(let j=0;j<block_lines.length;j++){
             let e = block_lines[j];
-            if (e.startsWith("Content-Type: ")) {
+            if (e.startsWith("Content-Type:")) {
                 let tmp = e.substr(13).split(';').map(e=>e.trim());
                 contentType = tmp.shift();
                 if(tmp.length>0){
